@@ -1,8 +1,10 @@
 #include <chrono>
 #include <climits>
+// #include <cstring>
+#include <string>
 #include <cmath>
-#include <set>
 #include <map>
+#include <unordered_map>
 #include <vector>
 #include <iostream>
 #include <algorithm>
@@ -10,12 +12,12 @@
 using std::cout;
 using std::endl;
 
-#define N 16
+#define N 25
 
 
 class Solver {
 private:
-    std::map<int, std::vector<int>> next_step[N];
+    std::unordered_map<int, std::vector<int>> next_step[N];
     std::vector<int> pos_blank;
     std::vector<int> movement;
     int node[N];
@@ -26,7 +28,12 @@ private:
     long count;  // node generation
     const int sqrt_n = (int) std::sqrt(N);
 
-    int dist[N][N];  // Manhattan distance
+    int dist[N][N] = {};  // Manhattan distance
+
+    const int db_size = (int) pow((double) N, (double) sqrt_n);
+
+    int row_linear_conflict[db_size] = {};
+    int col_linear_conflict[db_size] = {};
 
 public:
     Solver() {
@@ -43,7 +50,7 @@ public:
                     }
                 }
 
-                std::map<int, std::vector<int>> tmp_next_step;
+                std::unordered_map<int, std::vector<int>> tmp_next_step;
                 for (int l : target) {
                     std::vector<int> tmp = target;
                     for (auto it = tmp.begin(); it != tmp.end(); ++it) {
@@ -58,6 +65,16 @@ public:
                 next_step[i * sqrt_n + j] = tmp_next_step;
             }
         }
+
+        init_manhattan();
+
+//        std::fill(row_linear_conflict, row_linear_conflict + db_size, 0);
+//        std::fill(col_linear_conflict, col_linear_conflict + db_size, 0);
+        std::string rest;
+        for (int i = 0; i < sqrt_n; ++i) {
+            rest += (char) i;
+        }
+        partial_permutation("", rest, sqrt_n);
     }
 
     bool is_solvable(int *init) {
@@ -75,7 +92,6 @@ public:
     }
 
     void solve(int *init) {
-        init_manhattan();
         threshold = heuristic_manhattan(init);
 
         /* initialize root node */
@@ -94,7 +110,7 @@ public:
             pos_blank.resize((unsigned) threshold);
             movement.resize((unsigned) threshold);
             threshold = search();
-            cout <<"threshold: " << threshold << " count: " << count << endl;
+            cout << "threshold: " << threshold << " count: " << count << endl;
         }
 
         track_path(init);
@@ -122,10 +138,22 @@ private:
         return result;
     }
 
-    void init_manhattan() {
+    /* Manhattan distance and linear conflict */
+    int heuristic(int *node_) {
+        int result = 0;
         for (int i = 0; i < N; ++i) {
-            dist[0][N] = 0;
+            if (node_[i] != 0) {
+                result += dist[node_[i]][i];
+            }
         }
+        return result;
+    }
+
+    void init_manhattan() {
+//        for (int i = 0; i < N; ++i) {
+//            dist[0][N] = 0;
+//        }
+//        std::memset(dist, 0, sizeof(dist));
         for (int i = 1; i < N; ++i) {
             for (int j = 0; j < N; ++j) {
                 dist[i][j] = std::abs(i / sqrt_n - j / sqrt_n) + std::abs(i % sqrt_n - j % sqrt_n);
@@ -133,8 +161,67 @@ private:
         }
     }
 
-    void generate_database() {
+    void partial_permutation(std::string so_far, std::string rest, int n) {
+        if (n == 0) {
+            // cout << so_far << endl;
+            int line_count = 0;
+            std::map<int, std::vector<int>> row, col;
+            for (int i = 0; i < sqrt_n; ++i) {
+                int tail = (int) so_far[i];
+                line_count = line_count * N + tail;
+                if (tail != 0) {
+                    int r = tail / sqrt_n, c = tail % sqrt_n;
 
+                    if (std::map::end() == row.find(r)) {
+                        std::vector<int> tmp(1, tail);
+                        row[r] = tmp;
+                    } else {
+                        row[r].push_back(tail);
+                    }
+
+                    if (std::map::end() == row.find(c)) {
+                        std::vector<int> tmp(1, tail);
+                        row[c] = tmp;
+                    } else {
+                        row[c].push_back(tail);
+                    }
+
+                }
+            }
+
+
+            for (auto r : row) {
+                std::vector<int> tmp_max(r.second.size(), 0);
+
+                for (int i = 0; i < r.second.size(); ++i) {
+                    for (int j = i + 1; j < r.second.size(); ++j) {
+                        if (r.second[i] > r.second[j]) {
+                            ++tmp_max[i];
+                            ++tmp_max[j];
+                        }
+                    }
+                }
+                row_linear_conflict[r.first * N + line_count] = *std::max_element(tmp_max.begin(), tmp_max.end());
+            }
+
+            for (auto c : col) {
+                std::vector<int> tmp_max(c.second.size(), 0);
+
+                for (int i = 0; i < c.second.size(); ++i) {
+                    for (int j = i + 1; j < c.second.size(); ++j) {
+                        if (c.second[i] > c.second[j]) {
+                            ++tmp_max[i];
+                            ++tmp_max[j];
+                        }
+                    }
+                }
+                col_linear_conflict[c.first * N + line_count] = *std::max_element(tmp_max.begin(), tmp_max.end());
+            }
+        } else {
+            for (size_t i = 0; i < rest.length(); i++) {
+                partial_permutation(so_far + rest[i], rest.substr(i + 1, rest.length()), n - 1);
+            }
+        }
     }
 
     void track_path(int *init) {
